@@ -1,0 +1,14 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+.DS_Store
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# Secrets / signing (never commit your real container or team)
+*.mobileprovision

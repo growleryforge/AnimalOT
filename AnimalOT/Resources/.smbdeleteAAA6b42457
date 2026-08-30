@@ -1,0 +1,13 @@
+# Sound assets
+
+Drop generic, reusable audio files here (and add them to the app target) named to
+match `AnimalMaskConfig.soundNames`:
+
+- Donkey (gross-loud): `bray`, `fart`, `burp`
+- Raccoon (sneaky): `chitter`, `pounce`
+- Pig (gross-messy): `oink`, `splat`, `shake`
+
+Any of `.wav`, `.m4a`, `.caf`, `.aiff`, `.mp3` works. Until you add them, the app
+falls back to a system sound so the loop still works during bring-up.
+
+Keep them generic and swappable so families could later add their own.

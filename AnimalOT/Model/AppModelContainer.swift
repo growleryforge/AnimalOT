@@ -1,0 +1,65 @@
+import Foundation
+import SwiftData
+
+// MARK: - Persistence
+//
+// Local-first SwiftData store, synced via the family's CloudKit PRIVATE database.
+// No public database, no third-party analytics. A minor's media never leaves the
+// family iCloud.
+//
+// To enable real sync: in Signing & Capabilities add iCloud → CloudKit and a
+// container that matches `iCloud.com.Growlery.AnimalOT` (see entitlements),
+// plus Background Modes → Remote notifications. Until you do, the app still runs
+// fully on-device with `.automatic` falling back to local.
+
+enum AppModelContainer {
+
+    static let schema = Schema([
+        Family.self,
+        Child.self,
+        AppUser.self,
+        AppDevice.self,
+        FamilySecurity.self,
+        Game.self,
+        GameSession.self,
+        SensoryObservation.self,
+        MediaAsset.self,
+        BehaviorEvent.self,
+        Lesson.self,
+        MoveCard.self
+    ])
+
+    /// Production container — private CloudKit DB.
+    static func makeShared() -> ModelContainer {
+        let config = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .private("iCloud.com.Growlery.AnimalOT")
+        )
+        do {
+            let container = try ModelContainer(for: schema, configurations: [config])
+            SeedData.seedIfNeeded(ModelContext(container))
+            return container
+        } catch {
+            // Fall back to a local-only store so the app is never dead on launch
+            // (e.g. running on a device/simulator with no iCloud set up yet).
+            return makeLocalFallback()
+        }
+    }
+
+    static func makeLocalFallback() -> ModelContainer {
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+        // If even this fails the app genuinely cannot run; crashing here is correct.
+        let container = try! ModelContainer(for: schema, configurations: [config])
+        SeedData.seedIfNeeded(ModelContext(container))
+        return container
+    }
+
+    /// In-memory container for SwiftUI previews and tests.
+    static func makePreview() -> ModelContainer {
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try! ModelContainer(for: schema, configurations: [config])
+        SeedData.seedIfNeeded(ModelContext(container))
+        return container
+    }
+}

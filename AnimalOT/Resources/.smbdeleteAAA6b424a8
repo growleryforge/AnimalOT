@@ -1,0 +1,19 @@
+# Sound assets
+
+**Playable sounds are already included** in this folder (`bray`, `fart`, `burp`,
+`oink`, `splat`, `shake`, `chitter`, `pounce`), so the donkey brays and farts on
+first run with nothing to set up. They are synthesized cartoon placeholders —
+generic and swappable.
+
+To replace any of them with your own, just drop a file with the SAME name into
+this folder (any of `.wav`, `.m4a`, `.caf`, `.aiff`, `.mp3`) and rebuild. The
+synchronized project folder picks it up automatically.
+
+Which animal uses which (see `AnimalMaskConfig`):
+
+- Donkey (gross-loud): `bray`, `fart`, `burp` — fired on mouth-open, random each time
+- Pig (gross-messy): `oink`, `splat`, `shake`
+- Raccoon (sneaky): `chitter`, `pounce`
+
+If a named file is ever missing, the app falls back to a system sound so the loop
+never breaks.

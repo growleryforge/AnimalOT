@@ -1,0 +1,241 @@
+import SwiftUI
+import SwiftData
+
+// MARK: - The play surface (where he becomes the animal AND climbs the mischief)
+//
+// The mirror is the doorway; the GAME is the climb. Each mouth-open does the
+// mischief, which charges the meter. The world reacts MORE at every rung — bigger
+// sounds, glowing edges, screen shake — until it erupts in a big payoff. Then it
+// resets and invites him to do it again. No score, no fail; the meter only ever
+// goes up and celebrates.
+
+struct AnimalGameView: View {
+    let game: Game
+
+    @Environment(\.modelContext) private var context
+    @Environment(Provisioning.self) private var provisioning
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var sound = SoundEngine()
+    @State private var controller: KidSessionController?
+    @State private var config: AnimalMaskConfig = .config(for: .donkey)
+    @State private var meter = MischiefMeter()
+    @State private var theme = MischiefTheme.theme(for: .donkey)
+
+    @State private var gleeBursts: [GleeBurst] = []
+    @State private var blowoutBurst: [GleeBurst] = []
+    @State private var trackingHeld = true
+    @State private var shake = CGSize.zero
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            FaceMaskView(
+                config: config,
+                onMouthFire: handleFire,
+                onTrackingChange: { trackingHeld = $0 }
+            )
+            .ignoresSafeArea()
+
+            // "Powering up" glow around the edges — intensifies with the meter,
+            // without covering his face.
+            RoundedRectangle(cornerRadius: 0)
+                .strokeBorder(theme.barColor.opacity(0.15 + meter.charge * 0.7),
+                              lineWidth: 6 + meter.charge * 36)
+                .blur(radius: 8)
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .animation(.easeOut(duration: 0.2), value: meter.charge)
+
+            // Little build-up puffs on each fire.
+            ForEach(gleeBursts) { burst in
+                Text(burst.symbol)
+                    .font(.system(size: 50 + burst.escalation * 90))
+                    .position(burst.position)
+                    .transition(.scale.combined(with: .opacity))
+            }
+
+            VStack {
+                topBar
+                Spacer()
+                if !trackingHeld {
+                    // Gentle, judgment-free. NEVER "can't see you" — that reads as
+                    // rejection. We just stay warm and hold the mask.
+                    Text("hold still, little \(game.animalTheme)…")
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .transition(.opacity)
+                }
+                Spacer()
+                chargeMeter
+            }
+            .padding()
+
+            // The payoff: a full-screen eruption he set off himself.
+            if meter.isBlowingOut {
+                blowoutOverlay
+            }
+        }
+        .offset(shake)
+        .statusBarHidden()
+        .onAppear(perform: begin)
+        .onChange(of: meter.blowoutTick) { _, _ in eruptVisuals() }
+        .onDisappear {
+            meter.stop()
+            controller?.end()
+        }
+    }
+
+    // MARK: Bars & overlays
+
+    private var topBar: some View {
+        HStack {
+            Button {
+                controller?.end()
+                dismiss()
+            } label: {
+                Image(systemName: "house.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .padding(12)
+                    .background(.black.opacity(0.3), in: Circle())
+            }
+            Spacer()
+            if meter.blowoutCount > 0 {
+                // A tally — a celebration of how many he's set off, never a target.
+                Text("\(theme.payoffEmoji) ✕ \(meter.blowoutCount)")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(theme.barColor.opacity(0.5), in: Capsule())
+            }
+        }
+    }
+
+    private var chargeMeter: some View {
+        VStack(spacing: 6) {
+            Text(meter.tier >= 3 ? "LET IT RIP!" : theme.powerLabel)
+                .font(.system(size: 18, weight: .heavy, design: .rounded))
+                .foregroundStyle(.white)
+                .shadow(radius: 3)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.black.opacity(0.35))
+                    Capsule()
+                        .fill(theme.barColor)
+                        .frame(width: max(18, geo.size.width * meter.charge))
+                        .overlay(alignment: .trailing) {
+                            Text(theme.buildEmojis.first ?? "💨")
+                                .font(.system(size: 26))
+                                .scaleEffect(meter.tier >= 3 ? 1.3 : 1.0)
+                                .offset(x: 8)
+                        }
+                        .animation(.easeOut(duration: 0.2), value: meter.charge)
+                }
+            }
+            .frame(height: 26)
+            .scaleEffect(meter.tier >= 3 ? 1.04 : 1.0)
+            .animation(.easeInOut(duration: 0.25).repeatCount(meter.tier >= 3 ? 3 : 0),
+                       value: meter.tier)
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private var blowoutOverlay: some View {
+        ZStack {
+            theme.barColor.opacity(0.25).ignoresSafeArea()
+            ForEach(blowoutBurst) { burst in
+                Text(burst.symbol)
+                    .font(.system(size: 70 + burst.escalation * 80))
+                    .position(burst.position)
+            }
+            VStack(spacing: 12) {
+                Text(theme.payoffEmoji)
+                    .font(.system(size: 150))
+                    .scaleEffect(meter.isBlowingOut ? 1.0 : 0.2)
+                    .animation(.spring(response: 0.35, dampingFraction: 0.5), value: meter.isBlowingOut)
+                Text(theme.payoffText)
+                    .font(.system(size: 40, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                    .shadow(radius: 6)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .allowsHitTesting(false)
+        .transition(.opacity)
+    }
+
+    // MARK: Wiring
+
+    private func begin() {
+        let kind = AnimalKind.forGame(game)
+        config = .config(for: kind)
+        theme = .theme(for: kind)
+        sound.preload(config.soundNames)
+        meter.start()
+        let c = KidSessionController(context: context, deviceId: provisioning.deviceId)
+        c.begin(game: game)
+        controller = c
+    }
+
+    private func handleFire(_ rawEscalation: Double) {
+        // Charge the ladder; sound + glee scale to how FULL the meter is, so every
+        // fire feels bigger than the last as he climbs.
+        let charge = meter.registerFire()
+        let escalation = max(rawEscalation, charge)
+
+        let name = config.soundNames.randomElement() ?? "fart"
+        sound.fire(name, escalation: escalation)
+        controller?.logFire(escalation: escalation)
+        spawnGlee(escalation: escalation)
+
+        // Screen shake kicks in at the higher rungs — the world can barely hold it.
+        if meter.tier >= 2 {
+            let amp: CGFloat = meter.tier >= 3 ? 16 : 8
+            withAnimation(.easeInOut(duration: 0.06)) {
+                shake = CGSize(width: .random(in: -amp...amp), height: .random(in: -amp...amp))
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.4)) { shake = .zero }
+            }
+        }
+    }
+
+    private func spawnGlee(escalation: Double) {
+        let burst = GleeBurst(
+            symbol: theme.buildEmojis.randomElement() ?? "💨",
+            escalation: escalation,
+            position: CGPoint(x: CGFloat.random(in: 70...330),
+                              y: CGFloat.random(in: 180...560))
+        )
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+            gleeBursts.append(burst)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            withAnimation(.easeOut) { gleeBursts.removeAll { $0.id == burst.id } }
+        }
+    }
+
+    private func eruptVisuals() {
+        // Scatter a big confetti burst for the payoff.
+        let bursts = (0..<14).map { _ in
+            GleeBurst(
+                symbol: theme.burstEmojis.randomElement() ?? "💥",
+                escalation: Double.random(in: 0.3...1.0),
+                position: CGPoint(x: .random(in: 40...360), y: .random(in: 120...700))
+            )
+        }
+        blowoutBurst = bursts
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.3) {
+            blowoutBurst = []
+        }
+    }
+}
+
+struct GleeBurst: Identifiable {
+    let id = UUID()
+    let symbol: String
+    let escalation: Double
+    let position: CGPoint
+}

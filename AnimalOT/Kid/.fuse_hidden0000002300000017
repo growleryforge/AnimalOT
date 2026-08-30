@@ -1,0 +1,157 @@
+import SwiftUI
+import ARKit
+import SceneKit
+
+// MARK: - Be-the-animal face overlay (the hook)
+//
+// Light ARKit face-tracking overlay. ARFaceTrackingConfiguration is mature and
+// smooth on iPad — this clears the "a 7-year-old believes he's the animal" bar
+// with standard tech, and the EXPENSIVE full-body avatar is explicitly deferred.
+//
+// Hard requirements honored here:
+//  1. Locks on well under a second and holds (ARKit native).
+//  2. Graceful loss — if it loses his face we HOLD the last mask and silently
+//     re-find. Never an error, never "can't see you" (that lands as rejection).
+//  3. Tight feedback — mouth-open fires the sound on the render frame it happens.
+//  4. The animal reads as ALIVE — ears tilt, snout moves with his mouth, eyes
+//     blink — a transformation, not a sticker.
+
+struct FaceMaskView: UIViewControllerRepresentable {
+    let config: AnimalMaskConfig
+
+    /// Called (on main) when his mouth opens enough to "fire", with an escalation
+    /// 0...1 that climbs as he keeps doing it — escalating GLEE, not difficulty.
+    var onMouthFire: (Double) -> Void = { _ in }
+    /// Called (on main) when tracking is gained/lost. Drives gentle, judgment-free
+    /// copy only — never an error state.
+    var onTrackingChange: (Bool) -> Void = { _ in }
+
+    func makeUIViewController(context: Context) -> FaceMaskController {
+        let vc = FaceMaskController()
+        vc.config = config
+        vc.onMouthFire = onMouthFire
+        vc.onTrackingChange = onTrackingChange
+        return vc
+    }
+
+    func updateUIViewController(_ vc: FaceMaskController, context: Context) {
+        vc.config = config
+    }
+
+    static func dismantleUIViewController(_ vc: FaceMaskController, coordinator: ()) {
+        vc.pause()
+    }
+}
+
+final class FaceMaskController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
+
+    var config: AnimalMaskConfig = .config(for: .donkey)
+    var onMouthFire: (Double) -> Void = { _ in }
+    var onTrackingChange: (Bool) -> Void = { _ in }
+
+    private let sceneView = ARSCNView()
+    private var featureNode: AnimalFeatureNode?
+
+    // Mouth-open debounce + escalation.
+    private var mouthIsOpen = false
+    private var fireCount = 0
+    private let openThreshold: CGFloat = 0.45
+    private let closeThreshold: CGFloat = 0.20
+
+    // MARK: Lifecycle
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        sceneView.frame = view.bounds
+        sceneView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        sceneView.delegate = self
+        sceneView.session.delegate = self
+        sceneView.automaticallyUpdatesLighting = true
+        sceneView.scene = SCNScene()
+        // Show the live front camera under the mask so he sees himself transform.
+        view.addSubview(sceneView)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        start()
+    }
+
+    func start() {
+        guard ARFaceTrackingConfiguration.isSupported else {
+            // No TrueDepth camera (e.g. simulator). Don't error at the child —
+            // the parent surface surfaces this; here we simply stay calm.
+            return
+        }
+        let configuration = ARFaceTrackingConfiguration()
+        configuration.isLightEstimationEnabled = true
+        if ARFaceTrackingConfiguration.supportsWorldTracking {
+            // Keep it light; face-only is enough for the overlay.
+        }
+        sceneView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+    }
+
+    func pause() {
+        sceneView.session.pause()
+    }
+
+    // MARK: ARSCNViewDelegate
+
+    func renderer(_ renderer: SCNSceneRenderer, nodeFor anchor: ARAnchor) -> SCNNode? {
+        guard anchor is ARFaceAnchor else { return nil }
+        let node = AnimalFeatureNode(config: config)
+        featureNode = node
+        DispatchQueue.main.async { [weak self] in self?.onTrackingChange(true) }
+        return node
+    }
+
+    func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
+        guard let faceAnchor = anchor as? ARFaceAnchor else { return }
+        featureNode?.update(with: faceAnchor)
+        handleMouth(faceAnchor)
+    }
+
+    // MARK: Graceful loss — never an error
+
+    func session(_ session: ARSession, didFailWithError error: Error) {
+        // Silently attempt to recover. The child must NEVER see a failure.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            self?.start()
+        }
+    }
+
+    func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
+        switch camera.trackingState {
+        case .normal:
+            DispatchQueue.main.async { [weak self] in self?.onTrackingChange(true) }
+        case .notAvailable, .limited:
+            // Hold the mask; gently signal "still here", not "lost you".
+            DispatchQueue.main.async { [weak self] in self?.onTrackingChange(false) }
+        }
+    }
+
+    func sessionWasInterrupted(_ session: ARSession) { /* hold */ }
+
+    func sessionInterruptionEnded(_ session: ARSession) {
+        start() // re-find quietly
+    }
+
+    // MARK: Mouth → instant sound
+
+    private func handleMouth(_ faceAnchor: ARFaceAnchor) {
+        let jawOpen = (faceAnchor.blendShapes[.jawOpen] as? CGFloat) ?? 0
+        if !mouthIsOpen, jawOpen > openThreshold {
+            mouthIsOpen = true
+            fireCount += 1
+            // Escalation climbs with repetition AND with how wide he opens.
+            let repetition = min(1.0, Double(fireCount) / 8.0)
+            let width = min(1.0, Double((jawOpen - openThreshold) / (1 - openThreshold)))
+            let escalation = max(repetition, width)
+            if config.mouthFiresSound {
+                DispatchQueue.main.async { [weak self] in self?.onMouthFire(escalation) }
+            }
+        } else if mouthIsOpen, jawOpen < closeThreshold {
+            mouthIsOpen = false
+        }
+    }
+}

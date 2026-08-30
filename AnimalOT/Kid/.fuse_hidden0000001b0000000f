@@ -1,0 +1,90 @@
+import SwiftUI
+import SwiftData
+
+// MARK: - Kid home (games only — no assessment surface, ever)
+//
+// To the child this is purely cool animal games. There is no score, no timeline,
+// no settings he can fall into. Just: pick an animal, become it. The three
+// first-set hook animals lead.
+
+struct KidRootView: View {
+    @Environment(\.modelContext) private var context
+    @Query(filter: #Predicate<Game> { $0.isFirstSet == true },
+           sort: \Game.displayOrder)
+    private var firstSet: [Game]
+
+    @State private var selectedGame: Game?
+
+    private let columns = [GridItem(.adaptive(minimum: 240), spacing: 24)]
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Color(.systemIndigo).opacity(0.25), Color(.systemTeal).opacity(0.25)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 8) {
+                    Text("Pick an animal")
+                        .font(.system(size: 40, weight: .heavy, design: .rounded))
+                        .padding(.top, 32)
+                    Text("Psst… they’re all a little bit naughty.")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .padding(.bottom, 12)
+
+                    LazyVGrid(columns: columns, spacing: 24) {
+                        ForEach(firstSet) { game in
+                            AnimalCard(game: game) { selectedGame = game }
+                        }
+                    }
+                    .padding(24)
+                }
+            }
+        }
+        .fullScreenCover(item: $selectedGame) { game in
+            AnimalGameView(game: game)
+        }
+    }
+}
+
+/// A big, friendly, fail-free tap target. No lock, no badge, no judgment.
+struct AnimalCard: View {
+    let game: Game
+    let action: () -> Void
+
+    private var emoji: String {
+        switch AnimalKind.forGame(game) {
+        case .donkey:  return "🫏"
+        case .raccoon: return "🦝"
+        case .pig:     return "🐷"
+        }
+    }
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 14) {
+                Text(emoji).font(.system(size: 90))
+                Text(game.animalTheme.capitalized)
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                Text(game.mischiefHook)
+                    .font(.callout)
+                    .italic()
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 28)
+            .padding(.horizontal, 16)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28))
+            .overlay(RoundedRectangle(cornerRadius: 28).strokeBorder(.white.opacity(0.4), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+#Preview("Kid home") {
+    KidRootView()
+        .modelContainer(AppModelContainer.makePreview())
+}

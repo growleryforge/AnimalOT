@@ -1,0 +1,127 @@
+import SwiftUI
+import SwiftData
+
+// MARK: - The play surface (where he becomes the animal)
+//
+// No fail state, anywhere he can see. No score, no "try again," no correct
+// version. Whatever he does IS the animal doing it. The mask + instant sound are
+// the whole experience; capture + logging happen silently underneath.
+
+struct AnimalGameView: View {
+    let game: Game
+
+    @Environment(\.modelContext) private var context
+    @Environment(Provisioning.self) private var provisioning
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var sound = SoundEngine()
+    @State private var controller: KidSessionController?
+    @State private var config: AnimalMaskConfig = .config(for: .donkey)
+
+    // Glee feedback (escalating fun, not difficulty).
+    @State private var gleeBursts: [GleeBurst] = []
+    @State private var trackingHeld = true
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            FaceMaskView(
+                config: config,
+                onMouthFire: handleFire,
+                onTrackingChange: { trackingHeld = $0 }
+            )
+            .ignoresSafeArea()
+
+            // Escalating GLEE bursts — pure positive feedback, never a grade.
+            ForEach(gleeBursts) { burst in
+                Text(burst.symbol)
+                    .font(.system(size: 60 + burst.escalation * 80))
+                    .position(burst.position)
+                    .transition(.scale.combined(with: .opacity))
+            }
+
+            VStack {
+                topBar
+                Spacer()
+                // Gentle, judgment-free reassurance if tracking dips. NEVER "can't
+                // see you" — that lands as rejection. We just stay warm.
+                if !trackingHeld {
+                    Text("hold still, little \(game.animalTheme)…")
+                        .font(.title3.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.bottom, 40)
+                        .transition(.opacity)
+                }
+            }
+            .padding()
+        }
+        .statusBarHidden()
+        .onAppear(perform: begin)
+        .onDisappear { controller?.end() }
+    }
+
+    private var topBar: some View {
+        HStack {
+            // A small, low-salience way back. Bailing is data, never a felt
+            // failure — leaving just ends the session quietly.
+            Button {
+                controller?.end()
+                dismiss()
+            } label: {
+                Image(systemName: "house.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white.opacity(0.7))
+                    .padding(12)
+                    .background(.black.opacity(0.3), in: Circle())
+            }
+            Spacer()
+            Text(game.mischiefHook)
+                .font(.headline)
+                .foregroundStyle(.white.opacity(0.9))
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(.black.opacity(0.3), in: Capsule())
+        }
+    }
+
+    // MARK: Wiring
+
+    private func begin() {
+        config = .config(for: AnimalKind.forGame(game))
+        sound.preload(config.soundNames)
+        let c = KidSessionController(context: context, deviceId: provisioning.deviceId)
+        c.begin(game: game)
+        controller = c
+    }
+
+    private func handleFire(_ escalation: Double) {
+        // Instant sound + glee, logged as a behavior repeat.
+        let name = config.soundNames.first ?? "fart"
+        sound.fire(name, escalation: escalation)
+        controller?.logFire(escalation: escalation)
+        spawnGlee(escalation: escalation)
+    }
+
+    private func spawnGlee(escalation: Double) {
+        let symbols = ["💨", "🎉", "✨", "💥", "😆"]
+        let burst = GleeBurst(
+            symbol: symbols.randomElement() ?? "💨",
+            escalation: escalation,
+            position: CGPoint(x: CGFloat.random(in: 80...320),
+                              y: CGFloat.random(in: 200...600))
+        )
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.6)) {
+            gleeBursts.append(burst)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+            withAnimation(.easeOut) { gleeBursts.removeAll { $0.id == burst.id } }
+        }
+    }
+}
+
+struct GleeBurst: Identifiable {
+    let id = UUID()
+    let symbol: String
+    let escalation: Double
+    let position: CGPoint
+}

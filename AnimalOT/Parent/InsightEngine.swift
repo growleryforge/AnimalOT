@@ -1,0 +1,123 @@
+import Foundation
+import SwiftData
+
+// MARK: - Insight engine (the IMPROVE pillar, seeded-live on first open)
+//
+// 1.0 ships the control-flip insight and a coverage-gap → Play-Next suggestion,
+// because the two seed observations are built to trigger exactly these. The
+// richer Mosaic/Toolkit suite is 1.x.
+
+struct ControlFlipInsight: Identifiable {
+    let id = UUID()
+    let system: SensorySystem
+    let inputDescription: String   // e.g. "loud machines"
+    let whenInControl: String
+    let whenImposed: String
+    let lever: String
+    let supportingObservationIDs: [UUID]
+}
+
+struct PlayNextSuggestion: Identifiable {
+    let id = UUID()
+    let reason: String
+    let games: [Game]
+}
+
+enum InsightEngine {
+
+    /// Detect "same input, opposite control, opposite ease" within a system.
+    /// For the seed data this yields the loud-machine control-flip.
+    static func controlFlips(observations: [SensoryObservation]) -> [ControlFlipInsight] {
+        var results: [ControlFlipInsight] = []
+
+        let bySystem = Dictionary(grouping: observations.filter { $0.system != nil },
+                                  by: { $0.system! })
+
+        for (system, obs) in bySystem {
+            let inControl = obs.filter { $0.control == .controlMet }
+            let imposed = obs.filter { $0.control == .controlAbsent }
+            guard !inControl.isEmpty, !imposed.isEmpty else { continue }
+
+            // Ease proxy: lower intensity + a "tolerated"/regulating pattern reads
+            // as easier. If the in-control set is clearly easier than the imposed
+            // set, that's a flip.
+            let easeIn = avgEase(inControl)
+            let easeImposed = avgEase(imposed)
+            guard easeIn > easeImposed else { continue }
+
+            let label = inputLabel(for: system, from: obs)
+            results.append(ControlFlipInsight(
+                system: system,
+                inputDescription: label,
+                whenInControl: phrase(inControl),
+                whenImposed: phrase(imposed),
+                lever: "Give him the controls. \(label.capitalized) land far better when HE runs them.",
+                supportingObservationIDs: obs.map(\.id)
+            ))
+        }
+        return results
+    }
+
+    /// Coverage gap → Play-Next. Quiet vestibular is unmapped when every movement
+    /// signal is welded to noise. Suggest the games that isolate motion from sound.
+    static func playNext(observations: [SensoryObservation], games: [Game], childInterests: [String]) -> PlayNextSuggestion? {
+        let mappedSystems = Set(observations.compactMap { $0.system })
+        let vestibularMapped = mappedSystems.contains(.vestibular)
+
+        if !vestibularMapped {
+            let candidates = games
+                .filter { $0.system == .vestibular }
+                .sorted { lhs, rhs in
+                    matchScore(lhs, interests: childInterests) > matchScore(rhs, interests: childInterests)
+                }
+            if !candidates.isEmpty {
+                return PlayNextSuggestion(
+                    reason: "Quiet vestibular is unmapped — every movement read so far was tangled up with noise. These isolate motion from sound.",
+                    games: Array(candidates.prefix(2))
+                )
+            }
+        }
+
+        // Otherwise: surface the least-covered system, matched to interests.
+        let allSystems = SensorySystem.allCases
+        let uncovered = allSystems.filter { !mappedSystems.contains($0) }
+        if let gap = uncovered.first {
+            let candidates = games.filter { $0.system == gap }
+                .sorted { matchScore($0, interests: childInterests) > matchScore($1, interests: childInterests) }
+            if !candidates.isEmpty {
+                return PlayNextSuggestion(
+                    reason: "\(gap.label) coverage is still thin. Try these next.",
+                    games: Array(candidates.prefix(2))
+                )
+            }
+        }
+        return nil
+    }
+
+    // MARK: Helpers
+
+    private static func avgEase(_ obs: [SensoryObservation]) -> Double {
+        guard !obs.isEmpty else { return 0 }
+        // Ease = inverse of intensity (1 hardest=5). Default 3 if unset.
+        let vals = obs.map { 6.0 - Double($0.intensity ?? 3) }
+        return vals.reduce(0, +) / Double(vals.count)
+    }
+
+    private static func inputLabel(for system: SensorySystem, from obs: [SensoryObservation]) -> String {
+        // Pull a noun from descriptions if obvious; else fall back to system.
+        let text = obs.compactMap { $0.observationDescription?.lowercased() }.joined(separator: " ")
+        if text.contains("vacuum") || text.contains("steam") || text.contains("machine") {
+            return "loud machines"
+        }
+        return system.label.lowercased()
+    }
+
+    private static func phrase(_ obs: [SensoryObservation]) -> String {
+        obs.compactMap { $0.pattern.isEmpty ? nil : $0.pattern }
+            .first ?? "—"
+    }
+
+    private static func matchScore(_ game: Game, interests: [String]) -> Int {
+        Set(game.interestMatch).intersection(Set(interests)).count
+    }
+}

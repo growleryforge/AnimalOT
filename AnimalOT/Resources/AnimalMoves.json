@@ -1,0 +1,82 @@
+{
+  "decks": [
+    {
+      "id": "animal_strength_club",
+      "title": "Animal Strength Club",
+      "cards": [
+        {
+          "id": "crocodile_crawl",
+          "name": "Crocodile Crawl",
+          "emoji": "🐊",
+          "kidInstruction": "Lie low on your belly and crawl forward, staying flat like a crocodile sliding through water.",
+          "targets": ["core strength", "cross-pattern / midline", "proprioceptive heavy work"],
+          "difficulty": 3,
+          "themeColor": "#2E7D32"
+        },
+        {
+          "id": "crab_walk",
+          "name": "Crab Walk",
+          "emoji": "🦀",
+          "kidInstruction": "Sit down, put your hands behind you, lift your bottom up, and walk sideways like a crab.",
+          "targets": ["shoulder stability", "bilateral coordination", "core strength"],
+          "difficulty": 3,
+          "themeColor": "#E64A19"
+        },
+        {
+          "id": "bear_walk",
+          "name": "Bear Walk",
+          "emoji": "🐻",
+          "kidInstruction": "Hands and feet on the ground, bottom in the air. Walk forward like a big strong bear.",
+          "targets": ["cross-pattern / midline", "STNR integration", "proprioceptive heavy work"],
+          "difficulty": 2,
+          "themeColor": "#6D4C41"
+        },
+        {
+          "id": "lion_pose",
+          "name": "Lion Pose",
+          "emoji": "🦁",
+          "kidInstruction": "Kneel tall, open your mouth wide, stick out your tongue, and roar like a lion.",
+          "targets": ["regulation / calming", "breath control"],
+          "difficulty": 1,
+          "themeColor": "#F9A825"
+        },
+        {
+          "id": "frog_jumps",
+          "name": "Frog Jumps",
+          "emoji": "🐸",
+          "kidInstruction": "Squat down low with your hands on the ground, then spring up and forward like a frog.",
+          "targets": ["leg strength", "vestibular / balance", "proprioceptive heavy work"],
+          "difficulty": 2,
+          "themeColor": "#558B2F"
+        },
+        {
+          "id": "eagle_balance",
+          "name": "Eagle Balance",
+          "emoji": "🦅",
+          "kidInstruction": "Stand on one leg, stretch your arms out like wings, and hold steady like an eagle.",
+          "targets": ["vestibular / balance", "core strength"],
+          "difficulty": 3,
+          "themeColor": "#5D4037"
+        },
+        {
+          "id": "elephant_stomps",
+          "name": "Elephant Stomps",
+          "emoji": "🐘",
+          "kidInstruction": "Stand tall, lift your knees high, and stomp big heavy feet like an elephant.",
+          "targets": ["proprioceptive heavy work", "regulation / calming"],
+          "difficulty": 1,
+          "themeColor": "#546E7A"
+        },
+        {
+          "id": "lizard_push_ups",
+          "name": "Lizard Push-Ups",
+          "emoji": "🦎",
+          "kidInstruction": "Get into a low plank and do small push-ups, staying close to the ground like a lizard.",
+          "targets": ["upper body strength", "core strength"],
+          "difficulty": 4,
+          "themeColor": "#00897B"
+        }
+      ]
+    }
+  ]
+}

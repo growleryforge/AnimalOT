@@ -1,0 +1,104 @@
+import Foundation
+import SwiftData
+
+// MARK: - Kid session controller
+//
+// Owns one GameSession while a child plays. Logs the two automatic streams the
+// iPad is responsible for:
+//   1. Front-camera reaction video (via ReactionRecorder) → MediaAsset.
+//   2. In-app behavior data (choices, repeats, controls, duration) → BehaviorEvent.
+// No parent interpretation in the middle — just his actual actions. Everything
+// attaches to the GameSession and syncs to the parent phones for review.
+
+@MainActor
+@Observable
+final class KidSessionController {
+
+    private let context: ModelContext
+    private let deviceId: UUID
+    private let recorder = ReactionRecorder()
+
+    private(set) var session: GameSession?
+    private var startTime: Date?
+
+    init(context: ModelContext, deviceId: UUID) {
+        self.context = context
+        self.deviceId = deviceId
+    }
+
+    // MARK: Lifecycle
+
+    func begin(game: Game) {
+        beginSession(gameId: game.id, title: game.title)
+    }
+
+    /// Start a session for an animal-move card (Crocodile Crawl, Bear Walk…).
+    func begin(moveCard: MoveCard) {
+        beginSession(gameId: moveCard.id, title: moveCard.name)
+    }
+
+    private func beginSession(gameId: UUID, title: String) {
+        let s = GameSession(
+            childId: SeedData.childID,
+            gameId: gameId,
+            deviceId: deviceId,
+            startedAt: Date()
+        )
+        context.insert(s)
+        session = s
+        startTime = Date()
+        log(.choice, value: title)             // which game/move he chose
+        try? context.save()
+        Task { await recorder.start() }         // silent capture if consented
+    }
+
+    /// He completed one rep of a move.
+    func logRep(_ count: Int) {
+        log(.repeatAction, value: "rep \(count)")
+    }
+
+    func end() {
+        guard let s = session else { return }
+        if let start = startTime {
+            log(.duration, value: String(Int(Date().timeIntervalSince(start))))
+        }
+        s.endedAt = Date()
+
+        Task { [weak self] in
+            guard let self else { return }
+            if let result = await self.recorder.stop() {
+                let asset = MediaAsset(
+                    type: .video,
+                    source: .kidFrontCam,
+                    uri: result.relativeURI,
+                    capturedAt: result.capturedAt
+                )
+                self.context.insert(asset)
+                s.reactionMedia = (s.reactionMedia ?? []) + [asset]
+                try? self.context.save()
+            }
+            self.session = nil
+            self.startTime = nil
+        }
+        try? context.save()
+    }
+
+    // MARK: Behavior stream
+
+    func log(_ kind: BehaviorKind, value: String) {
+        guard let s = session else { return }
+        let event = BehaviorEvent(sessionId: s.id, kind: kind, value: value, at: Date())
+        context.insert(event)
+        s.behaviorEvents = (s.behaviorEvents ?? []) + [event]
+    }
+
+    /// He re-triggered the mischief (e.g. opened mouth → fired a sound).
+    func logFire(escalation: Double) {
+        log(.repeatAction, value: String(format: "fire@%.2f", escalation))
+    }
+
+    /// He set an in-game control — a direct control-state signal.
+    func logControl(_ value: String) {
+        log(.controlSet, value: value)
+    }
+}

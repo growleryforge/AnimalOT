@@ -1,0 +1,92 @@
+import Foundation
+import SwiftUI
+import UIKit
+
+// MARK: - The sneak game (the raccoon's loop — real movement grading)
+//
+// The sneaky animal is NOT the same as the gross-loud one. Here the mischief is
+// STILLNESS: he creeps up on a treasure by holding his body still, then POUNCES
+// (a big mouth-open lunge) to snatch it. This surfaces exactly what the spec wants
+// from the sneaky lane — movement grading & timing, self-regulated movement, the
+// hard-in-autism skill of holding then bursting.
+//
+// Staying true to the rules:
+//  • No fail. An early pounce just lets the treasure "skitter away" with a giggle,
+//    framed as "ooh, so close — sneak again," never "wrong."
+//  • Bailing/fidgeting is data, never a scold — motion just stops the creep; it
+//    eases back gently rather than snapping to zero.
+
+@MainActor
+@Observable
+final class SneakMeter {
+
+    enum Phase { case sneaking, caught, skittered }
+
+    /// 0...1 — how close he's crept to the treasure (fills while still).
+    private(set) var charge = 0.0
+    private(set) var phase: Phase = .sneaking
+    /// Treats caught this session — a tally, never a target.
+    private(set) var caught = 0
+    /// Bumps on every pounce attempt so the view can react.
+    private(set) var pounceTick = 0
+    /// Whether he's still enough right now (drives the "hold still" cue).
+    private(set) var isStill = false
+
+    /// Below this per-frame motion = "holding still" and the creep advances.
+    let stillThreshold = 0.08
+    /// He needs to be at least this close before a pounce can land.
+    let readyThreshold = 0.6
+
+    private var cooldown = false
+    private let success = UINotificationFeedbackGenerator()
+    private let thud = UIImpactFeedbackGenerator(style: .rigid)
+
+    var isReady: Bool { charge >= readyThreshold }
+
+    func start() {
+        success.prepare()
+        thud.prepare()
+    }
+
+    /// Per-frame head motion. Still → creep closer; moving → gently ease back.
+    func registerMotion(_ motion: Double) {
+        guard phase == .sneaking, !cooldown else { return }
+        isStill = motion < stillThreshold
+        if isStill {
+            charge = min(1.0, charge + 0.012)       // ~0.8s of stillness to get ready
+        } else {
+            charge = max(0.0, charge - 0.02 * motion) // fidget eases it, never punishes
+        }
+    }
+
+    /// He pounced (big mouth-open lunge). Lands only if he crept close enough.
+    @discardableResult
+    func pounce() -> Bool {
+        guard phase == .sneaking, !cooldown else { return false }
+        cooldown = true
+        pounceTick += 1
+        if isReady {
+            phase = .caught
+            caught += 1
+            success.notificationOccurred(.success)
+            reset(after: 1.6)
+            return true
+        } else {
+            phase = .skittered          // playful near-miss, never a failure
+            thud.impactOccurred()
+            reset(after: 1.1)
+            return false
+        }
+    }
+
+    private func reset(after seconds: Double) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            guard let self else { return }
+            self.charge = 0
+            self.phase = .sneaking
+            self.cooldown = false
+            self.success.prepare()
+            self.thud.prepare()
+        }
+    }
+}

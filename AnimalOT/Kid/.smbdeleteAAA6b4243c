@@ -1,0 +1,76 @@
+import Foundation
+import UIKit
+
+// MARK: - Animal mask configuration
+//
+// A light face overlay (ears, snout, whiskers) — NOT a full-body avatar (that's
+// the deferred 2.0 expense). These configs drive the SceneKit features attached
+// to the ARKit face anchor. Keep them swappable so families could add their own.
+
+enum AnimalKind: String {
+    case donkey   // gross-LOUD
+    case raccoon  // sneaky
+    case pig      // gross-MESSY
+
+    /// Map a seed game to its mask. Falls back to donkey (the 30-second hook).
+    static func forGame(_ game: Game) -> AnimalKind {
+        switch game.id {
+        case SeedData.grossLoudID:  return .donkey
+        case SeedData.sneakyID:     return .raccoon
+        case SeedData.grossMessyID: return .pig
+        default:
+            // Pick by theme keyword so library games still get a face.
+            let t = game.animalTheme.lowercased()
+            if t.contains("raccoon") || t.contains("cat") || t.contains("fox") { return .raccoon }
+            if t.contains("pig") || t.contains("dog") { return .pig }
+            return .donkey
+        }
+    }
+}
+
+struct AnimalMaskConfig {
+    let kind: AnimalKind
+    let furColor: UIColor
+    let snoutColor: UIColor
+    let earColor: UIColor
+    let hasWhiskers: Bool
+    /// The sound bank this animal pulls from (file names, sans extension).
+    let soundNames: [String]
+    /// Whether opening the mouth should fire a sound (the gross-loud lever).
+    let mouthFiresSound: Bool
+
+    static func config(for kind: AnimalKind) -> AnimalMaskConfig {
+        switch kind {
+        case .donkey:
+            return AnimalMaskConfig(
+                kind: .donkey,
+                furColor: UIColor(red: 0.62, green: 0.58, blue: 0.55, alpha: 1),
+                snoutColor: UIColor(red: 0.40, green: 0.36, blue: 0.34, alpha: 1),
+                earColor: UIColor(red: 0.55, green: 0.51, blue: 0.48, alpha: 1),
+                hasWhiskers: false,
+                soundNames: ["bray", "fart", "burp"],
+                mouthFiresSound: true
+            )
+        case .raccoon:
+            return AnimalMaskConfig(
+                kind: .raccoon,
+                furColor: UIColor(red: 0.45, green: 0.45, blue: 0.48, alpha: 1),
+                snoutColor: UIColor(red: 0.15, green: 0.15, blue: 0.17, alpha: 1),
+                earColor: UIColor(red: 0.30, green: 0.30, blue: 0.33, alpha: 1),
+                hasWhiskers: true,
+                soundNames: ["chitter", "pounce"],
+                mouthFiresSound: false   // sneaky is quiet; the pounce is the payoff
+            )
+        case .pig:
+            return AnimalMaskConfig(
+                kind: .pig,
+                furColor: UIColor(red: 0.95, green: 0.72, blue: 0.74, alpha: 1),
+                snoutColor: UIColor(red: 0.90, green: 0.55, blue: 0.60, alpha: 1),
+                earColor: UIColor(red: 0.93, green: 0.66, blue: 0.69, alpha: 1),
+                hasWhiskers: false,
+                soundNames: ["oink", "splat", "shake"],
+                mouthFiresSound: true
+            )
+        }
+    }
+}

@@ -1,0 +1,371 @@
+import Foundation
+import SwiftData
+
+// MARK: - Data model
+//
+// Family-generic from day one (childId / familyId everywhere) so multi-family is
+// a later flip, not a rewrite. CloudKit-backed SwiftData constraints are honored:
+//   • every stored property has a default or is optional
+//   • relationships are optional
+//   • no .unique attributes
+//
+// Enums are stored as raw strings (`*Raw`) with typed computed accessors.
+
+@Model
+final class Family {
+    var id: UUID = UUID()
+    var name: String = ""
+    var createdAt: Date = Date()
+
+    @Relationship(deleteRule: .cascade) var children: [Child]? = []
+    @Relationship(deleteRule: .cascade) var members: [AppUser]? = []
+
+    init(id: UUID = UUID(), name: String = "") {
+        self.id = id
+        self.name = name
+        self.createdAt = Date()
+    }
+}
+
+@Model
+final class Child {
+    var id: UUID = UUID()
+    var familyId: UUID = UUID()
+    var displayName: String = ""
+    var birthdate: Date?
+    /// Stored as raw strings; what he likes (drives game matching).
+    var interests: [String] = []
+    /// e.g. "PDA", "light-sensitive".
+    var profileFlags: [String] = []
+
+    init(id: UUID = UUID(),
+         familyId: UUID = UUID(),
+         displayName: String = "",
+         birthdate: Date? = nil,
+         interests: [String] = [],
+         profileFlags: [String] = []) {
+        self.id = id
+        self.familyId = familyId
+        self.displayName = displayName
+        self.birthdate = birthdate
+        self.interests = interests
+        self.profileFlags = profileFlags
+    }
+}
+
+@Model
+final class AppUser {
+    var id: UUID = UUID()
+    var familyId: UUID = UUID()
+    var displayName: String = ""
+    var roleRaw: String = UserRole.parent.rawValue
+
+    var role: UserRole {
+        get { UserRole(rawValue: roleRaw) ?? .parent }
+        set { roleRaw = newValue.rawValue }
+    }
+
+    init(id: UUID = UUID(), familyId: UUID = UUID(), displayName: String = "", role: UserRole = .parent) {
+        self.id = id
+        self.familyId = familyId
+        self.displayName = displayName
+        self.roleRaw = role.rawValue
+    }
+}
+
+/// A device is provisioned as kid or parent at setup. Type is identity:
+/// it determines which surface the build renders. Enforced in code, not just UI.
+@Model
+final class AppDevice {
+    var id: UUID = UUID()
+    var familyId: UUID = UUID()
+    var typeRaw: String = DeviceType.parent.rawValue
+    var provisionedAt: Date = Date()
+
+    var type: DeviceType {
+        get { DeviceType(rawValue: typeRaw) ?? .parent }
+        set { typeRaw = newValue.rawValue }
+    }
+
+    init(id: UUID = UUID(), familyId: UUID = UUID(), type: DeviceType = .parent) {
+        self.id = id
+        self.familyId = familyId
+        self.typeRaw = type.rawValue
+        self.provisionedAt = Date()
+    }
+}
+
+/// Optional lock on PARENT devices only. The kid device's safety comes from
+/// absence of the analytics surface, not from a lock.
+@Model
+final class FamilySecurity {
+    var familyId: UUID = UUID()
+    var parentPinHash: String?
+
+    init(familyId: UUID = UUID(), parentPinHash: String? = nil) {
+        self.familyId = familyId
+        self.parentPinHash = parentPinHash
+    }
+}
+
+/// The activity the app delivers. A real entity, not a hardcoded list.
+@Model
+final class Game {
+    var id: UUID = UUID()
+    var title: String = ""
+    var animalTheme: String = ""
+    var systemRaw: String = SensorySystem.auditory.rawValue
+    var captureModeRaw: String = CaptureMode.either.rawValue
+    var phoneHolderRaw: String = PhoneHolder.parentRun.rawValue
+
+    var setup: String = ""
+    var steps: [String] = []
+    var watchFor: [String] = []
+    var likelyMeaning: String = ""
+    var tags: [String] = []
+    /// Which child interests this lands well with.
+    var interestMatch: [String] = []
+
+    /// 1.0 content lives in the child's sneaky+gross lane. This flags the three
+    /// first-set hook animals so the kid surface can lead with them.
+    var isFirstSet: Bool = false
+    /// Order within the kid picker.
+    var displayOrder: Int = 0
+    /// The mischief one-liner shown conspiratorially on the kid surface.
+    var mischiefHook: String = ""
+
+    var system: SensorySystem {
+        get { SensorySystem(rawValue: systemRaw) ?? .auditory }
+        set { systemRaw = newValue.rawValue }
+    }
+    var captureMode: CaptureMode {
+        get { CaptureMode(rawValue: captureModeRaw) ?? .either }
+        set { captureModeRaw = newValue.rawValue }
+    }
+    var phoneHolder: PhoneHolder {
+        get { PhoneHolder(rawValue: phoneHolderRaw) ?? .parentRun }
+        set { phoneHolderRaw = newValue.rawValue }
+    }
+
+    init(id: UUID = UUID(),
+         title: String = "",
+         animalTheme: String = "",
+         system: SensorySystem = .auditory,
+         captureMode: CaptureMode = .either,
+         phoneHolder: PhoneHolder = .parentRun,
+         setup: String = "",
+         steps: [String] = [],
+         watchFor: [String] = [],
+         likelyMeaning: String = "",
+         tags: [String] = [],
+         interestMatch: [String] = [],
+         isFirstSet: Bool = false,
+         displayOrder: Int = 0,
+         mischiefHook: String = "") {
+        self.id = id
+        self.title = title
+        self.animalTheme = animalTheme
+        self.systemRaw = system.rawValue
+        self.captureModeRaw = captureMode.rawValue
+        self.phoneHolderRaw = phoneHolder.rawValue
+        self.setup = setup
+        self.steps = steps
+        self.watchFor = watchFor
+        self.likelyMeaning = likelyMeaning
+        self.tags = tags
+        self.interestMatch = interestMatch
+        self.isFirstSet = isFirstSet
+        self.displayOrder = displayOrder
+        self.mischiefHook = mischiefHook
+    }
+}
+
+/// A play instance. The child starts it on the iPad; parent captures bind to it.
+@Model
+final class GameSession {
+    var id: UUID = UUID()
+    var childId: UUID = UUID()
+    var gameId: UUID = UUID()
+    var deviceId: UUID = UUID()
+    var startedAt: Date = Date()
+    var endedAt: Date?
+
+    @Relationship(deleteRule: .cascade) var reactionMedia: [MediaAsset]? = []
+    @Relationship(deleteRule: .cascade) var behaviorEvents: [BehaviorEvent]? = []
+    @Relationship(deleteRule: .cascade) var observations: [Observation]? = []
+
+    init(id: UUID = UUID(),
+         childId: UUID = UUID(),
+         gameId: UUID = UUID(),
+         deviceId: UUID = UUID(),
+         startedAt: Date = Date()) {
+        self.id = id
+        self.childId = childId
+        self.gameId = gameId
+        self.deviceId = deviceId
+        self.startedAt = startedAt
+    }
+}
+
+/// Parent-added interpretation. Gains media + a gameId link vs. the prior spec.
+@Model
+final class Observation {
+    var id: UUID = UUID()
+    var childId: UUID = UUID()
+    var authorId: UUID?
+    var gameId: UUID?
+    var timestamp: Date = Date()
+
+    // Auto-prefilled from the Game where possible.
+    var systemRaw: String?
+    var pattern: String = ""
+    var controlRaw: String = ControlState.unknown.rawValue
+
+    var observationDescription: String?
+    var beforeState: String?
+    var afterState: String?
+    var intensity: Int?       // 1...5
+    var context: String?
+    var tags: [String] = []
+
+    @Relationship(deleteRule: .cascade) var media: [MediaAsset]? = []
+
+    var system: SensorySystem? {
+        get { systemRaw.flatMap { SensorySystem(rawValue: $0) } }
+        set { systemRaw = newValue?.rawValue }
+    }
+    var control: ControlState {
+        get { ControlState(rawValue: controlRaw) ?? .unknown }
+        set { controlRaw = newValue.rawValue }
+    }
+
+    /// Derived: did this input calm him? (after better than before)
+    var isRegulating: Bool {
+        guard let before = beforeState?.lowercased(),
+              let after = afterState?.lowercased() else { return false }
+        let calmWords = ["calm", "settled", "regulated", "calmer", "settles"]
+        let calmAfter = calmWords.contains { after.contains($0) }
+        let dysregBefore = ["wound", "dysreg", "amped", "escalat", "agitat"]
+            .contains { before.contains($0) }
+        return calmAfter && dysregBefore
+    }
+
+    init(id: UUID = UUID(),
+         childId: UUID = UUID(),
+         authorId: UUID? = nil,
+         gameId: UUID? = nil,
+         timestamp: Date = Date(),
+         system: SensorySystem? = nil,
+         pattern: String = "",
+         control: ControlState = .unknown,
+         description: String? = nil,
+         beforeState: String? = nil,
+         afterState: String? = nil,
+         intensity: Int? = nil,
+         context: String? = nil,
+         tags: [String] = []) {
+        self.id = id
+        self.childId = childId
+        self.authorId = authorId
+        self.gameId = gameId
+        self.timestamp = timestamp
+        self.systemRaw = system?.rawValue
+        self.pattern = pattern
+        self.controlRaw = control.rawValue
+        self.observationDescription = description
+        self.beforeState = beforeState
+        self.afterState = afterState
+        self.intensity = intensity
+        self.context = context
+        self.tags = tags
+    }
+}
+
+@Model
+final class MediaAsset {
+    var id: UUID = UUID()
+    var typeRaw: String = MediaType.video.rawValue
+    var sourceRaw: String = MediaSource.kidFrontCam.rawValue
+    /// Local file URL (relative to the app's container). Synced via family iCloud.
+    var uri: String = ""
+    var thumbnailURI: String?
+    var capturedAt: Date = Date()
+    var retentionUntil: Date?
+
+    var type: MediaType {
+        get { MediaType(rawValue: typeRaw) ?? .video }
+        set { typeRaw = newValue.rawValue }
+    }
+    var source: MediaSource {
+        get { MediaSource(rawValue: sourceRaw) ?? .kidFrontCam }
+        set { sourceRaw = newValue.rawValue }
+    }
+
+    init(id: UUID = UUID(),
+         type: MediaType = .video,
+         source: MediaSource = .kidFrontCam,
+         uri: String = "",
+         thumbnailURI: String? = nil,
+         capturedAt: Date = Date(),
+         retentionUntil: Date? = nil) {
+        self.id = id
+        self.typeRaw = type.rawValue
+        self.sourceRaw = source.rawValue
+        self.uri = uri
+        self.thumbnailURI = thumbnailURI
+        self.capturedAt = capturedAt
+        self.retentionUntil = retentionUntil
+    }
+}
+
+@Model
+final class BehaviorEvent {
+    var id: UUID = UUID()
+    var sessionId: UUID = UUID()
+    var kindRaw: String = BehaviorKind.choice.rawValue
+    /// Stringified value (game id, volume level, seconds, etc.).
+    var value: String = ""
+    var at: Date = Date()
+
+    var kind: BehaviorKind {
+        get { BehaviorKind(rawValue: kindRaw) ?? .choice }
+        set { kindRaw = newValue.rawValue }
+    }
+
+    init(id: UUID = UUID(),
+         sessionId: UUID = UUID(),
+         kind: BehaviorKind = .choice,
+         value: String = "",
+         at: Date = Date()) {
+        self.id = id
+        self.sessionId = sessionId
+        self.kindRaw = kind.rawValue
+        self.value = value
+        self.at = at
+    }
+}
+
+/// Concept-library content for the LEARN pillar (1.x, modeled now).
+@Model
+final class Lesson {
+    var id: UUID = UUID()
+    var title: String = ""
+    var body: String = ""
+    var relatedSystems: [String] = []
+    var relatedGames: [String] = []
+    var order: Int = 0
+
+    init(id: UUID = UUID(),
+         title: String = "",
+         body: String = "",
+         relatedSystems: [String] = [],
+         relatedGames: [String] = [],
+         order: Int = 0) {
+        self.id = id
+        self.title = title
+        self.body = body
+        self.relatedSystems = relatedSystems
+        self.relatedGames = relatedGames
+        self.order = order
+    }
+}

@@ -1,0 +1,148 @@
+import SwiftUI
+import SwiftData
+import AVKit
+
+// MARK: - SensoryObservation detail + editor (parent-added interpretation)
+
+struct ObservationDetailView: View {
+    @Bindable var observation: SensoryObservation
+
+    var body: some View {
+        Form {
+            if let media = observation.media, !media.isEmpty {
+                Section("Captured moment") {
+                    ForEach(media) { asset in
+                        MediaPlayerCell(asset: asset)
+                    }
+                }
+            }
+            Section("What happened") {
+                LabeledContent("Description", value: observation.observationDescription ?? "—")
+                LabeledContent("System", value: observation.system?.label ?? "—")
+                LabeledContent("Pattern", value: observation.pattern.isEmpty ? "—" : observation.pattern)
+                LabeledContent("Control", value: observation.control.label)
+                if let before = observation.beforeState { LabeledContent("Before", value: before) }
+                if let after = observation.afterState { LabeledContent("After", value: after) }
+                if let i = observation.intensity { LabeledContent("Intensity", value: "\(i)/5") }
+            }
+            if !observation.tags.isEmpty {
+                Section("Tags") {
+                    Text(observation.tags.joined(separator: ", "))
+                }
+            }
+        }
+        .navigationTitle(observation.timestamp.formatted(.dateTime.month().day()))
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+/// Add a parent interpretation. `prefillGame` auto-fills system/control where
+/// possible (capture is meant to be seconds).
+struct ObservationEditor: View {
+    @Environment(\.modelContext) private var context
+    @Environment(\.dismiss) private var dismiss
+
+    var prefillGame: Game? = nil
+    var sessionToAttach: GameSession? = nil
+
+    @State private var system: SensorySystem = .auditory
+    @State private var pattern: String = ""
+    @State private var control: ControlState = .unknown
+    @State private var description: String = ""
+    @State private var beforeState: String = ""
+    @State private var afterState: String = ""
+    @State private var intensity: Double = 3
+    @State private var tagText: String = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("What you saw") {
+                    TextField("Description", text: $description, axis: .vertical)
+                    Picker("System", selection: $system) {
+                        ForEach(SensorySystem.allCases) { Text($0.label).tag($0) }
+                    }
+                    TextField("Pattern (e.g. tolerated, sought, recoiled)", text: $pattern)
+                }
+                Section("Control (a first-class variable)") {
+                    Picker("Control", selection: $control) {
+                        ForEach(ControlState.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                }
+                Section("Before / after") {
+                    TextField("Before state", text: $beforeState)
+                    TextField("After state", text: $afterState)
+                    VStack(alignment: .leading) {
+                        Text("Intensity: \(Int(intensity))/5")
+                        Slider(value: $intensity, in: 1...5, step: 1)
+                    }
+                }
+                Section("Tags") {
+                    TextField("comma, separated", text: $tagText)
+                }
+            }
+            .navigationTitle("Add observation")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save", action: save)
+                }
+            }
+            .onAppear(perform: prefill)
+        }
+    }
+
+    private func prefill() {
+        guard let game = prefillGame else { return }
+        system = game.system
+    }
+
+    private func save() {
+        let obs = SensoryObservation(
+            childId: SeedData.childID,
+            authorId: SeedData.parentID,
+            gameId: prefillGame?.id,
+            timestamp: Date(),
+            system: system,
+            pattern: pattern,
+            control: control,
+            description: description.isEmpty ? nil : description,
+            beforeState: beforeState.isEmpty ? nil : beforeState,
+            afterState: afterState.isEmpty ? nil : afterState,
+            intensity: Int(intensity),
+            tags: tagText.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        )
+        context.insert(obs)
+        if let session = sessionToAttach {
+            session.observations = (session.observations ?? []) + [obs]
+        }
+        try? context.save()
+        dismiss()
+    }
+}
+
+/// Plays a locally stored clip from the family media folder.
+struct MediaPlayerCell: View {
+    let asset: MediaAsset
+    var body: some View {
+        let url = MediaStore.url(forRelative: asset.uri)
+        VStack(alignment: .leading, spacing: 6) {
+            if FileManager.default.fileExists(atPath: url.path) {
+                VideoPlayer(player: AVPlayer(url: url))
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            } else {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.secondarySystemBackground))
+                    .frame(height: 120)
+                    .overlay(Text("Clip syncing…").foregroundStyle(.secondary))
+            }
+            Text(asset.source == .kidFrontCam ? "From his iPad (reaction)" : "From your phone")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}

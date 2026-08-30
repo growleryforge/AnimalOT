@@ -1,0 +1,117 @@
+import Foundation
+import ARKit
+import SceneKit
+
+// MARK: - Animal features attached to the face anchor
+//
+// Procedural geometry (ears, snout, whiskers, eyes) so the scaffold runs with NO
+// art assets. Swap these for textured models later without touching the tracking
+// code. The point is liveliness: snout follows his mouth, eyes blink with his,
+// ears tilt with his head — a transformation, not a sticker.
+
+final class AnimalFeatureNode: SCNNode {
+
+    private let config: AnimalMaskConfig
+
+    private let leftEar = SCNNode()
+    private let rightEar = SCNNode()
+    private let snout = SCNNode()
+    private let leftEye = SCNNode()
+    private let rightEye = SCNNode()
+    private var whiskers: [SCNNode] = []
+
+    init(config: AnimalMaskConfig) {
+        self.config = config
+        super.init()
+        buildEars()
+        buildSnout()
+        buildEyes()
+        if config.hasWhiskers { buildWhiskers() }
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
+
+    // MARK: Build
+
+    private func material(_ color: UIColor) -> SCNMaterial {
+        let m = SCNMaterial()
+        m.diffuse.contents = color
+        m.lightingModel = .physicallyBased
+        m.roughness.contents = 0.8
+        return m
+    }
+
+    private func buildEars() {
+        let earGeo = SCNCone(topRadius: 0.001, bottomRadius: 0.022, height: 0.06)
+        earGeo.materials = [material(config.earColor)]
+        for (node, sign) in [(leftEar, CGFloat(-1)), (rightEar, CGFloat(1))] {
+            node.geometry = earGeo.copy() as? SCNGeometry
+            node.position = SCNVector3(Float(sign) * 0.055, 0.075, 0.02)
+            node.eulerAngles = SCNVector3(Float(-0.25), Float(sign) * 0.35, Float(sign) * -0.3)
+            addChildNode(node)
+        }
+    }
+
+    private func buildSnout() {
+        let geo: SCNGeometry
+        switch config.kind {
+        case .pig:
+            geo = SCNCylinder(radius: 0.026, height: 0.022)   // flat pig disc
+        case .donkey:
+            geo = SCNBox(width: 0.05, height: 0.045, length: 0.045, chamferRadius: 0.015)
+        case .raccoon:
+            geo = SCNSphere(radius: 0.022)
+        }
+        geo.materials = [material(config.snoutColor)]
+        snout.geometry = geo
+        snout.position = SCNVector3(0, -0.02, 0.06)
+        if config.kind == .pig { snout.eulerAngles = SCNVector3(Float.pi / 2, 0, 0) }
+        addChildNode(snout)
+    }
+
+    private func buildEyes() {
+        let eyeGeo = SCNSphere(radius: 0.012)
+        eyeGeo.materials = [material(.black)]
+        for (node, sign) in [(leftEye, CGFloat(-1)), (rightEye, CGFloat(1))] {
+            node.geometry = eyeGeo.copy() as? SCNGeometry
+            node.position = SCNVector3(Float(sign) * 0.03, 0.025, 0.055)
+            addChildNode(node)
+        }
+    }
+
+    private func buildWhiskers() {
+        let whiskerGeo = SCNCylinder(radius: 0.0008, height: 0.06)
+        whiskerGeo.materials = [material(.white)]
+        for sign in [CGFloat(-1), CGFloat(1)] {
+            for tilt in [CGFloat(-0.18), 0, 0.18] {
+                let w = SCNNode(geometry: whiskerGeo.copy() as? SCNGeometry)
+                w.position = SCNVector3(Float(sign) * 0.045, -0.01, 0.05)
+                w.eulerAngles = SCNVector3(0, 0, Float.pi / 2 + Float(sign) * Float(tilt))
+                addChildNode(w)
+                whiskers.append(w)
+            }
+        }
+    }
+
+    // MARK: Per-frame liveliness
+
+    func update(with faceAnchor: ARFaceAnchor) {
+        let blend = faceAnchor.blendShapes
+
+        // Snout drops + grows slightly as his mouth opens.
+        let jawOpen = blend[.jawOpen]?.floatValue ?? 0
+        snout.scale = SCNVector3(1, 1 + jawOpen * 0.4, 1)
+        snout.position.y = -0.02 - jawOpen * 0.02
+
+        // Eyes blink with his eyes (squash on Y).
+        let blinkL = blend[.eyeBlinkLeft]?.floatValue ?? 0
+        let blinkR = blend[.eyeBlinkRight]?.floatValue ?? 0
+        leftEye.scale = SCNVector3(1, max(0.1, 1 - blinkL), 1)
+        rightEye.scale = SCNVector3(1, max(0.1, 1 - blinkR), 1)
+
+        // Ears perk with brow raise — reads as alert/alive.
+        let brow = blend[.browInnerUp]?.floatValue ?? 0
+        leftEar.eulerAngles.x = -0.25 - brow * 0.3
+        rightEar.eulerAngles.x = -0.25 - brow * 0.3
+    }
+}

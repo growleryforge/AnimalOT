@@ -1,0 +1,91 @@
+import SwiftUI
+import SwiftData
+
+/// Decides which build/surface to render based on this device's identity.
+/// There is NO toggle between kid and parent at runtime — only re-provisioning.
+struct RootView: View {
+    @Environment(Provisioning.self) private var provisioning
+    @Environment(\.modelContext) private var context
+
+    var body: some View {
+        switch provisioning.deviceType {
+        case .none:
+            DeviceSetupView()
+        case .kid:
+            // The kid build renders ONLY the games. No assessment surface exists
+            // here to reach into.
+            KidRootView()
+        case .parent:
+            ParentRootView()
+        }
+    }
+}
+
+/// One-time setup: provision THIS device as a kid iPad or a parent phone.
+struct DeviceSetupView: View {
+    @Environment(Provisioning.self) private var provisioning
+    @Environment(\.modelContext) private var context
+
+    var body: some View {
+        VStack(spacing: 28) {
+            Spacer()
+            Text("🦁")
+                .font(.system(size: 72))
+            Text("Naughty Animals")
+                .font(.largeTitle.bold())
+            Text("Set up this device. This choice is permanent for this device — it decides whether this is a play surface or a parent surface.")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 32)
+
+            VStack(spacing: 16) {
+                Button {
+                    provision(.kid)
+                } label: {
+                    setupCard(emoji: "🟢", title: "This is the kid iPad",
+                              subtitle: "Only the animal games. Nothing to ‘get wrong.’")
+                }
+                Button {
+                    provision(.parent)
+                } label: {
+                    setupCard(emoji: "🔵", title: "This is a parent phone",
+                              subtitle: "Review, timeline, insights — the full app.")
+                }
+            }
+            .padding(.horizontal, 24)
+            Spacer()
+        }
+    }
+
+    private func provision(_ type: DeviceType) {
+        // Register this device in the synced family registry, then set the local
+        // identity that drives the surface.
+        let device = AppDevice(id: provisioning.deviceId, familyId: SeedData.familyID, type: type)
+        context.insert(device)
+        try? context.save()
+        provisioning.provision(as: type)
+    }
+
+    @ViewBuilder
+    private func setupCard(emoji: String, title: String, subtitle: String) -> some View {
+        HStack(spacing: 16) {
+            Text(emoji).font(.system(size: 34))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline)
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Image(systemName: "chevron.right").foregroundStyle(.tertiary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 18))
+    }
+}
+
+#Preview("Setup") {
+    DeviceSetupView()
+        .environment(Provisioning())
+        .modelContainer(AppModelContainer.makePreview())
+}

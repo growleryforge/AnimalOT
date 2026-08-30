@@ -1,0 +1,131 @@
+# Animal Games — iOS 1.0 scaffold
+
+A SwiftUI + ARKit + SwiftData/CloudKit project that delivers **1.0 of the Animal
+Games app**: become-the-animal mischief games that generate and capture sensory
+observation in the moment.
+
+This build is scoped exactly to the spec's 1.0 directive — **prove the hook**:
+
+- The **three first-set animals** (gross-LOUD donkey, sneaky raccoon, gross-MESSY
+  pig), built entirely in the child's sneaky+gross lane.
+- **Be-the-animal light face overlay** via ARKit face tracking (ears, snout,
+  whiskers, blinking eyes that move with him) — a transformation, not a sticker.
+- **No fail state** anywhere the child can see. No score, no "try again," no
+  correct version. Whatever he does *is* the animal doing it.
+- **Silent capture on the iPad**: front-camera reaction (screen + face together)
+  and in-app behavior logging — both attach to the `GameSession`.
+- **Hard kid/parent device split**: a device is provisioned once as a kid iPad
+  (games only) or a parent phone (full app). Not a toggle.
+- **Parent surface**: timeline, session review, and a live control-flip insight.
+- **CloudKit private-DB sync** wiring and the **two seed observations** so the
+  IMPROVE insight fires on first open.
+
+Explicitly **NOT in 1.0** (deferred per the spec): breadth of animals, full-body
+avatars (2.0), the full analytics/Mosaic/Toolkit suite, Play-Next beyond the seed
+gap, clinician export, retention controls.
+
+## Requirements
+
+- **Xcode 16+** (the project uses file-system-synchronized groups, objectVersion 77).
+- **iOS 17+** target (SwiftData).
+- A **physical device with a TrueDepth front camera** (iPad Pro, or iPhone X and
+  later) to see the face overlay — ARKit face tracking does not run in the
+  Simulator. The rest of the app (parent surface, data, seed insights) runs fine
+  in the Simulator.
+
+## Open & run
+
+1. Open `AnimalOT.xcodeproj` in Xcode.
+2. Select the **AnimalOT** target → **Signing & Capabilities**:
+   - Set your **Team** and a unique **Bundle Identifier** (the placeholder is
+     `com.yourfamily.AnimalOT`).
+   - Add the **iCloud** capability → check **CloudKit** → create/select a
+     container. Update the container id in **both** `AnimalOT.entitlements` and
+     `AppModelContainer.swift` so they match.
+   - Add **Background Modes** → **Remote notifications**.
+   - If you skip iCloud for a quick local test, the app auto-falls back to a
+     local-only store (`AppModelContainer.makeLocalFallback`) so it still runs.
+3. Build & run on a device.
+4. On first launch, pick **"This is the kid iPad"** or **"This is a parent
+   phone."** (Re-provision via Settings → debug button, DEBUG builds only.)
+5. To see reaction capture, open the parent build → **Settings → Reaction
+   capture** and turn it on (it is **off by default** by design).
+
+> Playable cartoon sounds ship in `AnimalOT/Resources/` and the face overlay is
+> procedural, so it runs and brays on first launch with nothing to add. Swap in
+> your own audio per `AnimalOT/Resources/SOUNDS_README.md` anytime.
+
+## What to look for (the hook bar)
+
+The spec sets a hard quality bar — *"a 7-year-old believes he's the animal."*
+On a TrueDepth device, opening his mouth as the donkey should fire the bray/fart
+**instantly**, with glee bursts that grow as he keeps going. If tracking dips, the
+app **holds the mask** and says something warm ("hold still, little donkey…") —
+**never** an error or "can't see you."
+
+## File map
+
+```
+AnimalOT/
+  App/
+    AnimalOTApp.swift        – entry; builds the CloudKit container
+    RootView.swift           – device-identity gate + one-time setup
+    Provisioning.swift       – local (never-synced) kid/parent identity
+  Model/
+    Enums.swift              – sensory system, capture mode, holder, control, etc.
+    Models.swift             – Family, Child, Game, GameSession, Observation,
+                               MediaAsset, BehaviorEvent, AppDevice, Lesson…
+    AppModelContainer.swift  – SwiftData + CloudKit private DB (+ local fallback)
+    SeedData.swift           – first-set + library games, child, two observations
+  Kid/                       – ships ONLY on kid devices
+    KidRootView.swift        – animal picker (the 3 first-set animals)
+    AnimalGameView.swift     – play surface; no fail state; glee feedback
+    FaceTrackingView.swift   – ARKit face tracking + graceful loss + sound trigger
+    AnimalFeatureNode.swift  – procedural ears/snout/whiskers/eyes (alive)
+    AnimalMask.swift         – per-animal mask + sound config
+    SoundEngine.swift        – instant, preloaded sound firing
+    ReactionRecorder.swift   – silent screen+face capture (ReplayKit) + consent
+    MediaStore.swift         – local media folder (family iCloud)
+    KidSessionController.swift– GameSession lifecycle + behavior + media streams
+  Parent/                    – ships ONLY on parent devices
+    ParentRootView.swift     – tabbed full app
+    TimelineView.swift       – observations w/ media thumbnails, filter
+    ObservationViews.swift   – detail, editor, video player cell
+    SessionsView.swift       – review iPad-captured sessions (raw → meaning)
+    InsightEngine.swift      – control-flip + Play-Next (coverage gap)
+    InsightsView.swift       – the IMPROVE cards
+    ParentSettingsView.swift – consent + privacy
+  Assets.xcassets, Info.plist, AnimalOT.entitlements, Resources/
+```
+
+## Privacy posture (built in, not bolted on)
+
+- Reaction video + behavior data live in the **family's own iCloud (CloudKit
+  private DB)** — never a third party, never an analytics SDK.
+- Capture is **off until a parent turns it on**, revocable, per-session.
+- The **child sees nothing** of being observed beyond what the OS requires.
+- The kid device's safety comes from the **absence** of any assessment surface,
+  not from a lock. The optional family PIN protects parent devices only (modeled
+  in `FamilySecurity`, wired in 1.x).
+
+## Notes & honest gaps
+
+This is a **scaffold meant to compile and run**, not a shipped product. A few
+things you'll finish on-device:
+
+- Reaction capture uses **ReplayKit** to record screen + face together (matches
+  "screen + face, self-documenting"). If you prefer raw front-cam frames instead,
+  swap `ReactionRecorder` for an `AVCaptureSession` reading ARKit frames.
+- Real **CloudKit sync** just needs your own container/team (see step 2). The
+  SwiftData model is now **CloudKit-ready**: every relationship has an inverse
+  (`Child.family`, `AppUser.family`, `MediaAsset.session`/`.observation`,
+  `BehaviorEvent.session`, `SensoryObservation.session`), all attributes are
+  optional/defaulted, and there are no unique constraints. `makeShared()` still
+  falls back to a local store if no iCloud container is configured, so it runs
+  either way.
+- Sounds are **bundled and playable** (synthesized cartoon placeholders in
+  `Resources/`) — the donkey brays/farts on first run. Swap in your own by
+  dropping same-named files in. The on-screen **animal art is procedural**
+  (ears/snout/whiskers built in code) — swap for textured models later.
+- Thumbnails in the timeline are symbolic; generate real ones from video in 1.x.
+```

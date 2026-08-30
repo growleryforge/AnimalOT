@@ -1,0 +1,258 @@
+import Foundation
+import SwiftData
+
+// MARK: - Seed data
+//
+// Ship non-empty & smart. On first launch we load:
+//   • The first child profile (animals + water; PDA, light-sensitive).
+//   • The three FIRST-SET hook animals (gross-loud, sneaky, gross-messy).
+//   • The broader generic-animal game library (V/P/T/A/PR), so IMPROVE has range.
+//   • Two real seed observations (the vacuum control-flip) so IMPROVE is live on
+//     first open and the control-flip insight fires immediately.
+
+enum SeedData {
+
+    // Stable IDs so kid + parent surfaces reference the same family/child.
+    static let familyID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+    static let childID  = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+    static let parentID = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+
+    // First-set game IDs (referenced by the kid surface masks).
+    static let grossLoudID  = UUID(uuidString: "AA000000-0000-0000-0000-000000000001")!
+    static let sneakyID     = UUID(uuidString: "AA000000-0000-0000-0000-000000000002")!
+    static let grossMessyID = UUID(uuidString: "AA000000-0000-0000-0000-000000000003")!
+
+    static func seedIfNeeded(_ context: ModelContext) {
+        // Only seed once: if any Game exists, assume seeded.
+        let existing = try? context.fetch(FetchDescriptor<Game>())
+        guard (existing?.isEmpty ?? true) else { return }
+
+        // Family + child + a parent member.
+        let family = Family(id: familyID, name: "Our Family")
+        let child = Child(
+            id: childID,
+            familyId: familyID,
+            displayName: "Gabriel",
+            interests: ["animals", "water"],          // animals primary, water secondary
+            profileFlags: ["PDA", "light-sensitive"]  // known accommodation: shade/overcast timing
+        )
+        let parent = AppUser(id: parentID, familyId: familyID, displayName: "Parent", role: .parent)
+        family.children = [child]
+        family.members = [parent]
+        context.insert(family)
+        context.insert(child)
+        context.insert(parent)
+
+        seedGames(context)
+        seedObservations(context)
+
+        try? context.save()
+    }
+
+    // MARK: First-set + library games
+
+    private static func seedGames(_ context: ModelContext) {
+        let games: [Game] = firstSetGames() + libraryGames()
+        games.forEach { context.insert($0) }
+    }
+
+    /// The 1.0 hook animals — sneaky + gross lane, built in the child's lane.
+    private static func firstSetGames() -> [Game] {
+        let grossLoud = Game(
+            id: grossLoudID,
+            title: "The animal that will NOT stop farting",
+            animalTheme: "donkey",
+            system: .auditory,
+            captureMode: .guided,
+            phoneHolder: .kidFacing,
+            setup: "Hand him the iPad. He becomes the donkey. No instruction — just ‘ohh, careful, this donkey is trouble.’",
+            steps: [
+                "He sees himself become a donkey (ears, snout) in the mirror.",
+                "Opening his mouth fires a giant bray / fart / burp — instantly.",
+                "Bigger mouth = bigger, sillier sound. Escalate the glee, not the difficulty."
+            ],
+            watchFor: [
+                "Seeking the loud silly sound vs. covering ears / pulling back",
+                "Does HE keep re-triggering it (control-flip lever in his hands)?",
+                "Which sounds delight vs. startle"
+            ],
+            likelyMeaning: "Auditory seeking vs. avoiding loud silly sound — with HIM controlling the trigger.",
+            tags: ["gross", "loud", "control-lever"],
+            interestMatch: ["animals"],
+            isFirstSet: true,
+            displayOrder: 0,
+            mischiefHook: "This donkey is NOT supposed to do that… do it anyway."
+        )
+
+        let sneaky = Game(
+            id: sneakyID,
+            title: "The sneaky one",
+            animalTheme: "raccoon",
+            system: .praxis,
+            captureMode: .guided,
+            phoneHolder: .kidFacing,
+            setup: "He becomes the raccoon. Tiptoe, freeze, creep… then POUNCE. The keep-coming-back animal.",
+            steps: [
+                "He becomes a raccoon (mask, whiskers) in the mirror.",
+                "Sneak slowly — the quieter and smoother he moves, the sneakier the raccoon.",
+                "Freeze… then explode into a pounce. Repeat, sneakier each time."
+            ],
+            watchFor: [
+                "Can he grade movement — slow and smooth vs. all-or-nothing?",
+                "Timing of the freeze and the pounce (sequencing)",
+                "Does he imitate / sequence the sneak?"
+            ],
+            likelyMeaning: "Praxis & motor sequencing — sneaking IS self-regulated movement.",
+            tags: ["sneaky", "movement-grading"],
+            interestMatch: ["animals"],
+            isFirstSet: true,
+            displayOrder: 1,
+            mischiefHook: "Shhh. Don’t let anyone catch the raccoon…"
+        )
+
+        let grossMessy = Game(
+            id: grossMessyID,
+            title: "Barf-and-shake-off",
+            animalTheme: "pig",
+            system: .tactile,
+            captureMode: .guided,
+            phoneHolder: .kidFacing,
+            setup: "He becomes the pig/dog. Roll in the slop, then a giant whole-body wet shake-off.",
+            steps: [
+                "He becomes a pig (snout, ears) in the mirror.",
+                "Roll in the (cartoon) mud and slop — gleeful and gross.",
+                "Then a huge shake-off — his real shake drives the animal’s shake."
+            ],
+            watchFor: [
+                "Does he lean into mess/wet, or pull back / want it off?",
+                "The shake-off as a big proprioceptive/vestibular release",
+                "Tactile reactions to the messy theme"
+            ],
+            likelyMeaning: "Tactile reactions to mess/wet, plus a proprioceptive/vestibular shake-off release.",
+            tags: ["gross", "messy", "shake-off"],
+            interestMatch: ["animals"],
+            isFirstSet: true,
+            displayOrder: 2,
+            mischiefHook: "Pigs LOVE mud. You’re a pig now."
+        )
+
+        return [grossLoud, sneaky, grossMessy]
+    }
+
+    /// The broader seed library (generic animals). Not all are 1.0 kid surfaces,
+    /// but they populate the parent library, coverage map, and Play-Next.
+    private static func libraryGames() -> [Game] {
+        [
+            Game(title: "Fly like the bird / swing like the monkey", animalTheme: "bird/monkey",
+                 system: .vestibular, captureMode: .either, phoneHolder: .parentRun,
+                 setup: "Swing already moving, or parent on it being the animal. Child joins; no ‘come swing.’",
+                 steps: ["Pick a flying/swinging animal", "The swing IS that animal moving", "Child joins the moving swing"],
+                 watchFor: ["Seeks more & never dizzy?", "Stops fast?", "Calmer after?"],
+                 likelyMeaning: "Vestibular seeking vs. caution; regulation effect.",
+                 tags: ["vestibular"], interestMatch: ["animals"]),
+
+            Game(title: "Otter float", animalTheme: "otter",
+                 system: .vestibular, captureMode: .quick, phoneHolder: .parentRun,
+                 setup: "Parent floating/bobbing; child joins the otter game.",
+                 steps: ["Otters float and roll", "Be otters in the pool/pond"],
+                 watchFor: ["Seeks being moved, going under, head tipped back?", "Or stays still/upright?"],
+                 likelyMeaning: "Vestibular response with NOISE stripped out — the clean motion read.",
+                 tags: ["vestibular", "water"], interestMatch: ["animals", "water"]),
+
+            Game(title: "Feed the hungry animals", animalTheme: "farm",
+                 system: .proprioceptive, captureMode: .guided, phoneHolder: .parentRun,
+                 setup: "Feed/bucket pre-loaded in his path, or parent narrates the weight. Genuine purpose = PDA-acceptable.",
+                 steps: ["The animals are hungry", "Carrying the heavy feed is the mission"],
+                 watchFor: ["Takes it on, repeats, whole-body effort?", "Calmer after?"],
+                 likelyMeaning: "Proprioceptive seeking + the regulating effect (the gold pattern).",
+                 tags: ["heavy-work", "regulating"], interestMatch: ["animals"]),
+
+            Game(title: "Burrow like a rabbit", animalTheme: "rabbit/fox",
+                 system: .proprioceptive, captureMode: .guided, phoneHolder: .parentRun,
+                 setup: "Build a den of cushions/blankets to be squished/wrapped in; offer, don’t instruct.",
+                 steps: ["Rabbits/foxes make tight cozy dens", "Be squished/wrapped/weighted"],
+                 watchFor: ["Seeks being squished/wrapped/weighted, asks for tighter?", "Settles?"],
+                 likelyMeaning: "Deep-pressure seeking — the most portable regulation tool.",
+                 tags: ["deep-pressure", "regulating"], interestMatch: ["animals"]),
+
+            Game(title: "Guess the animal by feel", animalTheme: "varied",
+                 system: .tactile, captureMode: .guided, phoneHolder: .parentRun,
+                 setup: "Handle varied-texture animals/materials near him; parent explores them aloud.",
+                 steps: ["Soft, smooth, coarse, feathery — different animals feel different"],
+                 watchFor: ["Which textures sought vs. recoiled?", "Light unexpected touch worse than firm?"],
+                 likelyMeaning: "Tactile defensiveness vs. seeking; the specific intolerable textures.",
+                 tags: ["tactile", "textures"], interestMatch: ["animals"]),
+
+            Game(title: "Pig in the mud", animalTheme: "pig",
+                 system: .tactile, captureMode: .quick, phoneHolder: .parentRun,
+                 setup: "Parent already in the messy/wet activity; child joins.",
+                 steps: ["Pigs love mud", "Be pigs"],
+                 watchFor: ["Plunges into wet/sticky?", "Or stays clean, must wash immediately?"],
+                 likelyMeaning: "Tactile defensiveness to wet/sticky (classic triggers).",
+                 tags: ["tactile", "wet", "messy"], interestMatch: ["animals", "water"]),
+
+            Game(title: "Animal sound match", animalTheme: "varied",
+                 system: .auditory, captureMode: .either, phoneHolder: .parentRunChildSees,
+                 setup: "Playful sound game; child can control volume / which sound plays (control lever built in).",
+                 steps: ["App plays generic animal sounds at varied volume/pitch", "Child matches/finds the animal"],
+                 watchFor: ["Covers ears / startles at certain sounds?", "Seeks loud?", "Note WHICH sounds"],
+                 likelyMeaning: "Auditory defensiveness AND the control-flip (his finger on the volume vs. not).",
+                 tags: ["auditory", "control-lever"], interestMatch: ["animals"]),
+
+            Game(title: "Move like the animal", animalTheme: "varied",
+                 system: .praxis, captureMode: .guided, phoneHolder: .kidFacing,
+                 setup: "Played as silly animal mimicry, not a command. The on-device animal models the movement.",
+                 steps: ["App shows an animal animation (bear crawl, frog jump, crab walk)", "Child copies it"],
+                 watchFor: ["Can he map the watched movement onto his own body?", "Sequence it?"],
+                 likelyMeaning: "Imitation praxis — specifically hard in autism; video is high-value here.",
+                 tags: ["praxis", "imitation"], interestMatch: ["animals"]),
+
+            Game(title: "Animal obstacle course", animalTheme: "varied",
+                 system: .praxis, captureMode: .quick, phoneHolder: .parentRun,
+                 setup: "A novel physical arrangement with an animal goal; don’t demonstrate.",
+                 steps: ["Get to the animal / be the animal", "Cross a new course of logs, bales, steps"],
+                 watchFor: ["Solves the novel sequence, or freezes/avoids/needs many watches?"],
+                 likelyMeaning: "Dyspraxia with novel tasks (the key praxis signal).",
+                 tags: ["praxis", "novel-motor"], interestMatch: ["animals"])
+        ]
+    }
+
+    // MARK: Seed observations (the vacuum control-flip)
+
+    private static func seedObservations(_ context: ModelContext) {
+        // Entry A — HE suggested + ran the vacuum himself.
+        let entryA = Observation(
+            childId: childID,
+            authorId: parentID,
+            timestamp: Date().addingTimeInterval(-86_400 * 9),
+            system: .auditory,
+            pattern: "tolerated",
+            control: .controlMet,
+            description: "Dumped chips; HE suggested and ran the vacuum himself.",
+            beforeState: "amped up",
+            afterState: "calm, pleased with himself",
+            intensity: 2,
+            context: "Kitchen, his idea",
+            tags: ["self-initiated"]
+        )
+
+        // Entry B — parents ran the loud machines; imposed.
+        let entryB = Observation(
+            childId: childID,
+            authorId: parentID,
+            timestamp: Date().addingTimeInterval(-86_400 * 4),
+            system: .auditory,
+            pattern: "tolerated-but-hated",
+            control: .controlAbsent,
+            description: "Painted carpet; parents ran the vacuum + steam cleaner.",
+            beforeState: "fine",
+            afterState: "tense, no meltdown but hated it",
+            intensity: 4,
+            context: "Living room, our idea",
+            tags: ["imposed", "no-meltdown"]
+        )
+
+        context.insert(entryA)
+        context.insert(entryB)
+    }
+}
